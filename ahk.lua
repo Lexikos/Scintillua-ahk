@@ -13,6 +13,12 @@ local lpeg_type = lpeg.type
 
 local M = {_NAME = 'ahk'..(is_v2 and 2 or 1)}
 
+-- This seems to be the only way to prevent large scripts from crashing
+-- due to "stack overflow (too many captures)" or having other strange
+-- behaviour.  Unfortunately it prevents patterns from spanning lines:
+-- M._LEXBYLINE = true
+M._INCREMENTAL = true
+
 -- local is_v2 = true --string.find(l.property['ahk.platform'] or '', 'v2') and true
 
 local token = l.token

@@ -981,7 +981,11 @@ local function build_grammar(lexer, initial_rule)
     lexer._INITIALRULE = initial_rule
     lexer._GRAMMAR = lpeg_Ct(lpeg_P(grammar))
   else
-    lexer._GRAMMAR = lpeg_Ct(join_tokens(lexer)^0)
+    local grammar = join_tokens(lexer)
+    if not lexer._INCREMENTAL then
+      grammar = grammar^0
+    end
+    lexer._GRAMMAR = lpeg_Ct(grammar)
   end
 end
 
@@ -1108,7 +1112,7 @@ end
 -- @return table of token names and positions.
 -- @name lex
 function M.lex(lexer, text, init_style)
-  if not lexer._LEXBYLINE then
+  if not (lexer._LEXBYLINE or lexer._INCREMENTAL) then
     -- For multilang lexers, build a new grammar whose initial_rule is the
     -- current language.
     if lexer._CHILDREN then
@@ -1131,15 +1135,30 @@ function M.lex(lexer, text, init_style)
         tokens[#tokens + 1] = line_tokens[i + 1] + offset
       end
     end
-    local offset = 0
     local grammar = lexer._GRAMMAR
-    for line in text:gmatch('[^\r\n]*\r?\n?') do
-      local line_tokens = lpeg_match(grammar, line)
-      if line_tokens then append(tokens, line_tokens, offset) end
-      offset = offset + #line
-      -- Use the default style to the end of the line if none was specified.
-      if tokens[#tokens] ~= offset then
-        tokens[#tokens + 1], tokens[#tokens + 2] = 'default', offset + 1
+    if lexer._LEXBYLINE then
+      local offset = 0
+      for line in text:gmatch('[^\r\n]*\r?\n?') do
+        local line_tokens = lpeg_match(grammar, line)
+        if line_tokens then append(tokens, line_tokens, offset) end
+        offset = offset + #line
+        -- Use the default style to the end of the line if none was specified.
+        if tokens[#tokens] ~= offset then
+          tokens[#tokens + 1], tokens[#tokens + 2] = 'default', offset + 1
+        end
+      end
+    else -- lexer._INCREMENTAL
+      local start_pos = 1
+      while start_pos <= #text do
+        local line_tokens = lpeg_match(grammar, text, start_pos)
+        if line_tokens then
+          append(tokens, line_tokens, 0)
+          start_pos = line_tokens[#line_tokens]
+        else
+          -- just stop?
+          print('stopped early')
+          return tokens
+        end
       end
     end
     return tokens
