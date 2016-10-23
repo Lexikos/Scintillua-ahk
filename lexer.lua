@@ -1130,9 +1130,11 @@ function M.lex(lexer, text, init_style)
   else
     local tokens = {}
     local function append(tokens, line_tokens, offset)
+      local n = #tokens
       for i = 1, #line_tokens, 2 do
-        tokens[#tokens + 1] = line_tokens[i]
-        tokens[#tokens + 1] = line_tokens[i + 1] + offset
+        tokens[n + i] = line_tokens[i]
+        i = i + 1
+        tokens[n + i] = line_tokens[i] + offset
       end
     end
     local grammar = lexer._GRAMMAR
