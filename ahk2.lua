@@ -264,7 +264,7 @@ local command = (property + exp_word_highlighter(identifier_patt, function_words
   * cmd_delim * r.expression^0
 
 -- Pattern matching any command.
-command = command + flow1 + flow2 + flow3
+command = flow1 + flow2 + flow3 + command
 
 local stm_propdecl = (token(l.KEYWORD, keyword'get' + keyword'set') + identifier)
     * ws * (otb_at_eol + ws * token(l.WHITESPACE, l.newline) * #(ws * '{'))
