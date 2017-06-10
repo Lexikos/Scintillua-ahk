@@ -96,10 +96,10 @@ local ws0 = S' \t'^0 -- no token
 --   Should be (?<!\S), but (?<![\x21-\xFF]) is pretty close:
 local line_comment = (';' - B(R('\033\255'))) * l.nonnewline^0
 local block_comment
-  = starts_line('/*') * l.nonnewline^0
-  * (l.newline * -starts_line('*/') * l.nonnewline^0)^0
-  * (l.newline * starts_line('*/'))^-1
-local comment = token(l.COMMENT, line_comment + block_comment + starts_line('*/'))
+  = starts_line('/*')
+  * (l.any - (starts_line('*/') + P'*/' * ws0 * -l.nonnewline))^0
+  * P('*/')^-1
+local comment = token(l.COMMENT, line_comment + block_comment)
 
 local ws_multiline = (comment^-1 * token(l.WHITESPACE, S' \t\r\n'^1))^0
 local otb_at_eol = token_op'{' * ws * (comment + at_eol)
@@ -185,9 +185,8 @@ exp_word = (token(l.KEYWORD, keyword'new') * (ws1 * variable)^-1) + exp_word
 -- Make the end-quote optional so highlighting kicks in sooner.
 local sq = token_op"'"
 local dq = token_op'"'
-local q_str = (sq * string_patt("'%", deref) * sq^-1)
-            + (dq * string_patt('"%', deref) * dq^-1)
--- local q_str = dq * string_patt('"', nil, '""') * dq^-1
+local q_str = (sq * string_patt("'") * sq^-1)
+            + (dq * string_patt('"') * dq^-1)
 
 local parenex
   = token_op'(' * V'expression'^-1 * token_op')'^-1
@@ -235,10 +234,7 @@ local function args(...)
   return GR(a)
 end
 
-local arg_text = ws * (string_patt(',%', deref) + #P',')
-
-local arg_label = ws * string_patt(',% \t', deref, nil, l.LABEL)
-local arg_litlabel = ws * token(l.LABEL, (l.any - S' \t,`\r\n%')^1)
+local arg_litlabel = ws * token(l.LABEL, (l.any - S' \t,`\r\n')^1)
 
 local arg_expression = ws * (r.expression_until_comma + #P',')
 
@@ -400,22 +396,6 @@ local function args2(...)
   end
   return GR(a)
 end
-local arg_map = (((
-  ('S' * lpeg.Cc(arg_text^-1)) +
-  ('E' * lpeg.Cc(arg_expression^-1)) +
-  (S'VO' * lpeg.Cc(arg_var^-1))
-)^1 * -l.any) / args2) + lpeg.Cc(no_args)
-local arg_cache = {}
-local function map_args(args)
-  local patt = arg_cache[v]
-  if not patt then
-    -- Construct a pattern from this argstring.
-    patt = lpeg_match(arg_map, args)
-    -- Cache it for all commands which use this arg combination.
-    arg_cache[args] = patt
-  end
-  return patt
-end
 
 def_keywords(function_words, l.FUNCTION, {
   'Abs',
@@ -482,7 +462,6 @@ def_keywords(function_words, l.FUNCTION, {
   'Critical',
   'DateAdd',
   'DateDiff',
-  'Deref',
   'DetectHiddenText',
   'DetectHiddenWindows',
   'DirCopy',
@@ -737,11 +716,10 @@ def_keywords(function_words, l.FUNCTION, {
   'WinWaitNotActive',
 })
 
-local args_e = map_args'E'
-local args_ee = map_args'EE'
-local args_eee = map_args'EEE'
+local args_e = args(arg_expression)
+local args_ee = args(arg_expression, arg_expression)
+local args_eee = args(arg_expression, arg_expression, arg_expression)
 
-local args_label = args(arg_label)
 local args_litlabel = args(arg_litlabel)
 
 local If_args = (arg_expression * (comma * ws * r.statement)^-1)^-1
@@ -763,21 +741,19 @@ def_flow_cmd {
   Catch = args(arg_var) * ws * token_op'{'^-1,
   Continue = args_litlabel,
   For = GR(For_args),
-  Gosub = args_label,
-  Goto = args_label,
+  Gosub = args_litlabel,
+  Goto = args_litlabel,
   Loop = GR(Loop_args),
   Return = args_e,
   Throw = args_e,
   Until = args_e,
-  LoopFiles = args_ee,
-  LoopReg = args_ee,
-  LoopRead = args_ee,
-  LoopParse = args_eee,
 }
 
 def_flow_par {
   If = GR(If_args),
   While = args_e,
+  Goto = args_e,
+  Gosub = args_e,
 }
 
 def_flow_otb {
