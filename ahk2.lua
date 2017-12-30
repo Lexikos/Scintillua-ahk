@@ -404,9 +404,11 @@ def_keywords(function_words, l.FUNCTION, {
   'ASin',
   'ATan',
   'BlockInput',
+  'CaretGetPos',
   'Ceil',
   'Chr',
   'Click',
+  'ClipboardAll',
   'ClipWait',
   'ComObjActive',
   'ComObjArray',
@@ -552,9 +554,8 @@ def_keywords(function_words, l.FUNCTION, {
   'LoadPicture',
   'Log',
   'LTrim',
-  'Menu',
-  'MenuGetHandle',
-  'MenuGetName',
+  'MenuCreate',
+  'MenuFromHandle',
   'MenuSelect',
   'Mod',
   'MonitorGet',
@@ -663,6 +664,7 @@ def_keywords(function_words, l.FUNCTION, {
   'Tan',
   'Thread',
   'ToolTip',
+  'TraySetIcon',
   'TrayTip',
   'Trim',
   'Type',
@@ -726,9 +728,9 @@ local If_args = (arg_expression * (comma * ws * r.statement)^-1)^-1
 
 local Loop_args =
   (token(l.KEYWORD, keyword'Parse')
-    * ws * comma * args_eee) +
+    * ws * comma^-1 * args_eee) +
   (token(l.KEYWORD, keyword'Reg' + keyword'Files' + keyword'Read')
-    * ws * comma * args_ee) +
+    * ws * comma^-1 * args_ee) +
   (arg_expression^-1)
 
 local in_keyword = token(l.KEYWORD, keyword'in')
@@ -800,7 +802,7 @@ def_directives {
 def_keywords(variable_words, l.VARIABLE, {
   -- v1 & v2 variables
   'a_ahkpath', 'a_ahkversion', 'a_appdata', 'a_appdatacommon',
-  'a_caretx', 'a_carety', 'a_computername', 'a_controldelay', 'a_coordmodecaret', 'a_coordmodemenu', 'a_coordmodemouse', 'a_coordmodepixel', 'a_coordmodetooltip', 'a_cursor',
+  'a_computername', 'a_controldelay', 'a_coordmodecaret', 'a_coordmodemenu', 'a_coordmodemouse', 'a_coordmodepixel', 'a_coordmodetooltip', 'a_cursor',
   'a_dd', 'a_ddd', 'a_dddd', 'a_defaultmousespeed', 'a_desktop', 'a_desktopcommon', 'a_detecthiddentext', 'a_detecthiddenwindows',
   'a_endchar', 'a_eventinfo',
   'a_fileencoding',
@@ -814,16 +816,18 @@ def_keywords(variable_words, l.VARIABLE, {
   'a_priorhotkey', 'a_priorkey', 'a_programfiles', 'a_programs', 'a_programscommon', 'a_ptrsize',
   'a_regview',
   'a_screendpi', 'a_screenheight', 'a_screenwidth', 'a_scriptdir', 'a_scriptfullpath', 'a_scripthwnd', 'a_scriptname', 'a_sec', 'a_sendlevel', 'a_sendmode', 'a_space', 'a_startmenu', 'a_startmenucommon', 'a_startup', 'a_startupcommon', 'a_storecapslockmode', 'a_stringcasesense',
-  'a_tab', 'a_temp', 'a_thisfunc', 'a_thishotkey', 'a_thislabel', 'a_thismenu', 'a_thismenuitem', 'a_thismenuitempos', 'a_tickcount', 'a_timeidle', 'a_timeidlephysical', 'a_timesincepriorhotkey', 'a_timesincethishotkey', 'a_titlematchmode', 'a_titlematchmodespeed',
+  'a_tab', 'a_temp', 'a_thisfunc', 'a_thishotkey', 'a_thislabel', 'a_tickcount', 'a_timeidle', 'a_timeidlephysical', 'a_timesincepriorhotkey', 'a_timesincethishotkey', 'a_titlematchmode', 'a_titlematchmodespeed',
   'a_username',
   'a_wday', 'a_windelay', 'a_windir', 'a_workingdir',
   'a_yday', 'a_year', 'a_yweek', 'a_yyyy',
-  'clipboard', 'clipboardall', 'false', 'programfiles', 'true',
-  -- v2 variables
+  'clipboard', 'false', 'programfiles', 'true',
+  --[[ v1 variables
+  'a_thismenu', 'a_thismenuitem', 'a_thismenuitempos', 'a_caretx', 'a_carety', 'clipboardall',
+  ]]-- v2 variables
   'a_comspec',
   'a_initialworkingdir',
   'a_loopfilepath',
-  'a_msgboxresult',
+  'a_traymenu', 'a_allowmainwindow',
 })
 def_keywords(variable_words, l.KEYWORD, {
   'this' -- It's a variable, but feels like a keyword. This is for contexts which only accept variables, not real keywords.
@@ -831,7 +835,7 @@ def_keywords(variable_words, l.KEYWORD, {
 -- Functions for v2 are the same as commands (already set up).
 -- Only these few are handled this way because () forces expression mode.
 def_keywords(function_words, l.KEYWORD, {
-  'loop', 'loopfiles', 'loopparse', 'loopread', 'loopreg',
+  'loop', --'loopfiles', 'loopparse', 'loopread', 'loopreg',
 })
 
 M._foldsymbols = {
