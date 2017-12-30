@@ -1,4 +1,5 @@
--- AHK LPeg lexer.
+
+-- AutoHotkey v1 LPeg lexer.
 
 -- Debug
 io.stdout:setvbuf("no")
@@ -11,15 +12,13 @@ local P, R, S, B, V = lpeg.P, lpeg.R, lpeg.S, lpeg.B, lpeg.V
 local lpeg_match, lpeg_Cmt, lpeg_Ct = lpeg.match, lpeg.Cmt, lpeg.Ct
 local lpeg_type = lpeg.type
 
-local M = {_NAME = 'ahk'..(is_v2 and 2 or 1)}
+local M = {_NAME = 'ahk1'}
 
 -- This seems to be the only way to prevent large scripts from crashing
 -- due to "stack overflow (too many captures)" or having other strange
 -- behaviour.  Unfortunately it prevents patterns from spanning lines:
 -- M._LEXBYLINE = true
 M._INCREMENTAL = true
-
--- local is_v2 = true --string.find(l.property['ahk.platform'] or '', 'v2') and true
 
 local token = l.token
 local tunpack = table.unpack or unpack
@@ -72,7 +71,7 @@ local function word_switch(word_patt)
   end), add_words
 end
 
-local wordchar = l.alnum + (is_v2 and '_' or S'#_@$') + R'\128\255'
+local wordchar = l.alnum + S'#_@$' + R'\128\255'
 
 local function insensitive(word)
   local patt = '' -- Testing shows ('' * P(x)) == x if x is a pattern.
@@ -137,11 +136,7 @@ exp_keywords['or'] = l.KEYWORD
 exp_keywords['not'] = l.KEYWORD
 exp_keywords['in'] = l.ERROR -- Reserved/likely user error.
 exp_keywords['contains'] = l.ERROR
-if is_v2 then
-  exp_keywords['is'] = l.KEYWORD
-else
-  exp_keywords['is'] = l.ERROR
-end
+exp_keywords['is'] = l.ERROR
 exp_keywords['byref'] = l.KEYWORD -- It's only a keyword in function definitions, but since they can't be detected reliably...
 exp_keywords['this'] = l.KEYWORD -- Not really a keyword, but feels like one.
 --[[
@@ -200,7 +195,7 @@ local exp_word = B'.' * (token(l.KEYWORD, keyword'base') + identifier)
   + token(l.KEYWORD, keyword'base') * #S'.['
   + exp_word_highlighter(identifier_patt, nonfunction_words) -- var or keyword
 
-local deref = pct * (is_v2 and V'expression_until_pct' or plain_variable) * pct
+local deref = pct * plain_variable * pct
 
 local dot_prop = ws * token_op'.' * (token(l.NUMBER, l.integer) + identifier)
 local double_deref = identifier^-1 * (deref * identifier^-1)^1
@@ -210,46 +205,17 @@ local variable = double_deref + plain_variable
 local property = exp_word * dot_prop^1
 local variable_or_property = property + variable
 
-if is_v2 then
-  -- New is unconditionally a keyword in v2, but still affects the interpretation
-  -- of the following word; i.e. xxx in 'new xxx()' is a variable, not a function.
-  exp_word = (token(l.KEYWORD, keyword'new') * (ws1 * variable)^-1) + exp_word
-else
-  exp_word = (token(l.KEYWORD, keyword'new') * ws1 * variable) + exp_word
-end
+-- 'New' in v1 is only a keyword if followed by an identifier (variable name).
+exp_word = (token(l.KEYWORD, keyword'new') * ws1 * variable) + exp_word
 
--- For now, single-quoted strings have v2 semantics (they don't exist in v1)
--- and double-quoted strings have v1 semantics (for testing/proof of concept).
 -- Make the end-quote optional so highlighting kicks in sooner.
-local sq = token_op"'"
 local dq = token_op'"'
-local q_str
-if is_v2 then
-  local sq_str = sq * string_patt("'%", deref) * sq^-1
-  local dq_str = dq * string_patt('"%', deref) * dq^-1
-  q_str = sq_str + dq_str
-else
-  local dq_str = dq * string_patt('"', nil, '""') * dq^-1
-  q_str = dq_str
-end
+local q_str = dq * string_patt('"', nil, '""') * dq^-1
 
 local parenex
   = token_op'(' * V'expression'^-1 * token_op')'^-1
   + token_op'{' * V'expression'^-1 * token_op'}'^-1
   + token_op'[' * V'expression'^-1 * token_op']'^-1
-
---[[
-local exp_keywords = keyword'and' + keyword'or' + keyword'not' + keyword'new'
-local exp_reserved = keyword'in' + keyword'contains'
-if is_v2 then
-  exp_keywords = exp_keywords + keyword'is'
-else
-  -- v1 doesn't actually reserve these keywords, so they can be used as variables.
-  -- However, it's more likely to be user error in this context, so treat as error.
-  exp_reserved = exp_reserved + keyword'is'
-end
-local keywordex = token(l.KEYWORD, exp_keywords) + token(l.ERROR, exp_reserved)
---]]
 
 local exp_common = ws1 + q_str + parenex + number + exp_word
 
@@ -338,23 +304,6 @@ local stm_propdecl = (token(l.KEYWORD, keyword'get' + keyword'set') + identifier
 --  only propdecl should be considered inside the body of a class, and never outside.
 command = command + stm_propdecl
 
-if is_v2 then
-  local def = def_commands
-  def_commands = function(words, new_filter)
-    def(words, new_filter)
-    local tn = l.FUNCTION
-    -- Add all commands to the expression keyword table.
-    for word in pairs(words) do
-      function_words[word:lower()] = tn
-    end
-  end
-  -- Add user-defined commands.
-  command = command
-    + (property + identifier) * cmd_delim * (
-      arg_normal * (comma * arg_normal)^0
-    )
-end
-
 -- Directives.
 local directive, def_directives = word_switch(
   lpeg.C(token(l.PREPROCESSOR, l.alnum^2)) * cmd_delim
@@ -365,15 +314,14 @@ local no_args = P''
 
 -- Other statements.
 
+-- Expression `:=` and compound assignments
 local stm_assign = variable_or_property * ws
   * token(l.OPERATOR, (S(':+-*|&^/.') * '=') + '<<=' + '>>=')
   * ws * r.expression^-1
 
-if not is_v2 then
-  -- Legacy = assignment.
-  stm_assign = stm_assign
-    + (variable * ws * token_op'=' * ws * string_patt('%', deref))
-end
+-- Legacy = assignment.
+stm_assign = stm_assign
+  + (variable * ws * token_op'=' * ws * string_patt('%', deref))
 
 local inc_dec = token(l.OPERATOR, P'++' + P'--')
 local stm_inc_dec = (
@@ -507,314 +455,6 @@ local function map_args(args)
   return patt
 end
 
-if is_v2 then
-def_commands ({
-  Abs = 'OS',
-  ACos = 'OS',
-  Array = 'OSSSSSSSSSS',
-  ASin = 'OS',
-  ATan = 'OS',
-  BlockInput = 'S',
-  Ceil = 'OS',
-  Chr = 'OS',
-  Click = 'SSSSSS',
-  ClipWait = 'SS',
-  ComObjActive = 'OS',
-  ComObjArray = 'OSSSSSSSSS',
-  ComObjConnect = 'SS',
-  ComObjCreate = 'OSS',
-  ComObject = 'OSSS',
-  ComObjError = 'OS',
-  ComObjFlags = 'OSSS',
-  ComObjGet = 'OS',
-  ComObjQuery = 'OSSS',
-  ComObjType = 'OSS',
-  ComObjValue = 'OS',
-  Control = 'SSSSSSS',
-  ControlClick = 'SSSSSSSS',
-  ControlFocus = 'SSSSS',
-  ControlGet = 'OSSSSSSS',
-  ControlGetFocus = 'OSSSS',
-  ControlGetPos = 'OOOOSSSSS',
-  ControlGetText = 'OSSSSS',
-  ControlMove = 'SSSSSSSSS',
-  ControlSend = 'SSSSSS',
-  ControlSendRaw = 'SSSSSS',
-  ControlSetText = 'SSSSSS',
-  CoordMode = 'SS',
-  Cos = 'OS',
-  Critical = 'S',
-  DateAdd = 'OSSS',
-  DateDiff = 'OSSS',
-  Deref = 'OS',
-  DetectHiddenText = 'S',
-  DetectHiddenWindows = 'S',
-  DirCopy = 'SSS',
-  DirCreate = 'S',
-  DirDelete = 'SS',
-  DirExist = 'OS',
-  DirMove = 'SSS',
-  DirSelect = 'OSSS',
-  DllCall = 'OSSSSSSSSSS',
-  Download = 'SS',
-  Drive = 'SSS',
-  DriveGet = 'OSS',
-  Edit = '',
-  EnvGet = 'OS',
-  EnvSet = 'SS',
-  Exception = 'OSSS',
-  Exit = 'S',
-  ExitApp = 'S',
-  Exp = 'OS',
-  FileAppend = 'SSS',
-  FileCopy = 'SSS',
-  FileCreateShortcut = 'SSSSSSSSS',
-  FileDelete = 'S',
-  FileEncoding = 'S',
-  FileExist = 'OS',
-  FileGetAttrib = 'OS',
-  FileGetShortcut = 'SOOOOOOO',
-  FileGetSize = 'OSS',
-  FileGetTime = 'OSS',
-  FileGetVersion = 'OS',
-  FileInstall = 'SSS',
-  FileMove = 'SSS',
-  FileOpen = 'OSSS',
-  FileRead = 'OS',
-  FileRecycle = 'S',
-  FileRecycleEmpty = 'S',
-  FileSelect = 'OSSSS',
-  FileSetAttrib = 'SSS',
-  FileSetTime = 'SSSS',
-  Floor = 'OS',
-  Format = 'OSSSSSSSSSS',
-  FormatTime = 'OSS',
-  Func = 'OS',
-  GetKeyName = 'OS',
-  GetKeySC = 'OS',
-  GetKeyState = 'OSS',
-  GetKeyVK = 'OS',
-  GroupActivate = 'SS',
-  GroupAdd = 'SSSSS',
-  GroupClose = 'SS',
-  GroupDeactivate = 'SS',
-  Gui = 'SSSS',
-  GuiControl = 'SSS',
-  GuiControlGet = 'OSSS',
-  Hotkey = 'SSS',
-  IL_Add = 'OSSSS',
-  IL_Create = 'OSSS',
-  IL_Destroy = 'OS',
-  ImageSearch = 'OOSSSSS',
-  IniDelete = 'SSS',
-  IniRead = 'OSSSS',
-  IniWrite = 'SSSS',
-  Input = 'OSSS',
-  InputBox = 'OSSSS',
-  InStr = 'OSSSSS',
-  IsByRef = 'OS',
-  IsFunc = 'OS',
-  IsLabel = 'OS',
-  IsObject = 'OSSSSSSSSSS',
-  KeyHistory = 'SS',
-  KeyWait = 'SS',
-  ListHotkeys = '',
-  ListLines = 'S',
-  ListVars = '',
-  Ln = 'OS',
-  LoadPicture = 'OSSS',
-  Log = 'OS',
-  LTrim = 'OSS',
-  LV_Add = 'OSSSSSSSSSS',
-  LV_Delete = 'OS',
-  LV_DeleteCol = 'OS',
-  LV_GetCount = 'OS',
-  LV_GetNext = 'OSS',
-  LV_GetText = 'OSSS',
-  LV_Insert = 'OSSSSSSSSSS',
-  LV_InsertCol = 'OSSS',
-  LV_Modify = 'OSSSSSSSSSS',
-  LV_ModifyCol = 'OSSS',
-  LV_SetImageList = 'OSS',
-  Menu = 'SSSSSS',
-  MenuGetHandle = 'OS',
-  MenuGetName = 'OS',
-  MenuSelect = 'SSSSSSSSSSS',
-  Mod = 'OSS',
-  MonitorGet = 'SSSSS',
-  MonitorGetCount = 'O',
-  MonitorGetName = 'OS',
-  MonitorGetPrimary = 'O',
-  MonitorGetWorkArea = 'SSSSS',
-  MouseClick = 'SSSSSSS',
-  MouseClickDrag = 'SSSSSSS',
-  MouseGetPos = 'OOOOS',
-  MouseMove = 'SSSS',
-  MsgBox = 'SSSS',
-  NumGet = 'OSSS',
-  NumPut = 'OSSSS',
-  ObjAddRef = 'OS',
-  ObjBindMethod = 'OSSSSSSSSSS',
-  ObjClone = 'OS',
-  ObjDelete = 'OSSS',
-  Object = 'OSSSSSSSSSS',
-  ObjGetAddress = 'OSS',
-  ObjGetCapacity = 'OSS',
-  ObjHasKey = 'OSS',
-  ObjInsertAt = 'SSSSSSSSSSS',
-  ObjLength = 'OS',
-  ObjMaxIndex = 'OS',
-  ObjMinIndex = 'OS',
-  ObjNewEnum = 'OS',
-  ObjPop = 'OS',
-  ObjPush = 'OSSSSSSSSSS',
-  ObjRawSet = 'SSS',
-  ObjRelease = 'OS',
-  ObjRemoveAt = 'OSSS',
-  ObjSetCapacity = 'OSSS',
-  OnClipboardChange = 'SS',
-  OnExit = 'SS',
-  OnMessage = 'SSS',
-  Ord = 'OS',
-  OutputDebug = 'S',
-  Pause = 'SS',
-  PixelGetColor = 'OSSS',
-  PixelSearch = 'OOSSSSSSS',
-  PostMessage = 'SSSSSSSS',
-  ProcessClose = 'OS',
-  ProcessExist = 'OS',
-  ProcessSetPriority = 'SS',
-  ProcessWait = 'OSS',
-  ProcessWaitClose = 'OSS',
-  Random = 'OSS',
-  RegDelete = 'SS',
-  RegDeleteKey = 'S',
-  RegExMatch = 'OSSSS',
-  RegExReplace = 'OSSSSSS',
-  RegisterCallback = 'OSSSS',
-  RegRead = 'OSS',
-  RegWrite = 'SSSS',
-  Reload = '',
-  Round = 'OSS',
-  RTrim = 'OSS',
-  Run = 'SSSO',
-  RunAs = 'SSS',
-  RunWait = 'SSSO',
-  SB_SetIcon = 'OSSS',
-  SB_SetParts = 'OSSSSSSSSSS',
-  SB_SetText = 'OSSS',
-  Send = 'S',
-  SendEvent = 'S',
-  SendInput = 'S',
-  SendLevel = 'S',
-  SendMessage = 'SSSSSSSSS',
-  SendMode = 'S',
-  SendPlay = 'S',
-  SendRaw = 'S',
-  SetCapslockState = 'S',
-  SetControlDelay = 'S',
-  SetDefaultMouseSpeed = 'S',
-  SetKeyDelay = 'SSS',
-  SetMouseDelay = 'SS',
-  SetNumlockState = 'S',
-  SetRegView = 'S',
-  SetScrollLockState = 'S',
-  SetStoreCapslockMode = 'S',
-  SetTimer = 'SSS',
-  SetTitleMatchMode = 'S',
-  SetWinDelay = 'S',
-  SetWorkingDir = 'S',
-  Shutdown = 'S',
-  Sin = 'OS',
-  Sleep = 'S',
-  Sort = 'OSS',
-  SoundBeep = 'SS',
-  SoundGet = 'OSSS',
-  SoundPlay = 'SS',
-  SoundSet = 'SSSS',
-  SplitPath = 'SOOOOO',
-  Sqrt = 'OS',
-  StatusBarGetText = 'OSSSSS',
-  StatusBarWait = 'SSSSSSSS',
-  StrGet = 'OSSS',
-  StringCaseSense = 'S',
-  StrLen = 'OS',
-  StrLower = 'OSS',
-  StrPut = 'OSSSS',
-  StrReplace = 'OSSSOS',
-  StrSplit = 'OSSS',
-  StrUpper = 'OSS',
-  SubStr = 'OSSS',
-  Suspend = 'S',
-  SysGet = 'OS',
-  Tan = 'OS',
-  Thread = 'SSS',
-  ToolTip = 'SSSS',
-  TrayTip = 'SSSS',
-  Trim = 'OSS',
-  TV_Add = 'OSSS',
-  TV_Delete = 'OS',
-  TV_Get = 'OSS',
-  TV_GetChild = 'OS',
-  TV_GetCount = 'O',
-  TV_GetNext = 'OSS',
-  TV_GetParent = 'OS',
-  TV_GetPrev = 'OS',
-  TV_GetSelection = 'O',
-  TV_GetText = 'OSS',
-  TV_Modify = 'OSSS',
-  TV_SetImageList = 'OSS',
-  Type = 'OS',
-  VarSetCapacity = 'OSSS',
-  WinActivate = 'SSSS',
-  WinActivateBottom = 'SSSS',
-  WinActive = 'OSSSS',
-  WinClose = 'SSSSS',
-  WinExist = 'OSSSS',
-  WinGetClass = 'OSSSS',
-  WinGetControls = 'OSSSS',
-  WinGetControlsHwnd = 'OSSSS',
-  WinGetCount = 'OSSSS',
-  WinGetExStyle = 'OSSSS',
-  WinGetID = 'OSSSS',
-  WinGetIDLast = 'OSSSS',
-  WinGetList = 'OSSSS',
-  WinGetMinMax = 'OSSSS',
-  WinGetPID = 'OSSSS',
-  WinGetPos = 'OOOOSSSS',
-  WinGetProcessName = 'OSSSS',
-  WinGetProcessPath = 'OSSSS',
-  WinGetStyle = 'OSSSS',
-  WinGetText = 'OSSSS',
-  WinGetTitle = 'OSSSS',
-  WinGetTransColor = 'OSSSS',
-  WinGetTransparent = 'OSSSS',
-  WinHide = 'SSSS',
-  WinKill = 'SSSSS',
-  WinMaximize = 'SSSS',
-  WinMinimize = 'SSSS',
-  WinMinimizeAll = '',
-  WinMinimizeAllUndo = '',
-  WinMove = 'SSSSSSSS',
-  WinMoveBottom = 'SSSS',
-  WinMoveTop = 'SSSS',
-  WinRedraw = 'SSSS',
-  WinRestore = 'SSSS',
-  WinSetAlwaysOnTop = 'SSSSS',
-  WinSetEnabled = 'SSSSS',
-  WinSetExStyle = 'SSSSS',
-  WinSetRegion = 'SSSSS',
-  WinSetStyle = 'SSSSS',
-  WinSetTitle = 'SSSSS',
-  WinSetTransColor = 'SSSSS',
-  WinSetTransparent = 'SSSSS',
-  WinShow = 'SSSS',
-  WinWait = 'SSSSS',
-  WinWaitActive = 'SSSSS',
-  WinWaitClose = 'SSSSS',
-  WinWaitNotActive = 'SSSSS',
-}, map_args)
-else
 def_commands ({
   AutoTrim = 'S',
   BlockInput = 'S',
@@ -1000,13 +640,8 @@ def_commands ({
   WinWaitClose = 'SSESS',
   WinWaitNotActive = 'SSESS',
 }, map_args)
-end
 
-local If_args
-if is_v2 then
-  If_args = (arg_expression * (comma * ws * r.statement)^-1)^-1
-else
-  If_args =
+local If_args =
   (
     arg_var *
     (
@@ -1033,23 +668,15 @@ else
     )
   )
   + arg_expression^-1
-end
 
 local Loop_args =
   (token(l.KEYWORD, keyword'Parse')
-    * ws * comma * args(is_v2 and arg_normal or arg_var_ex, arg_normal, arg_normal)) +
+    * ws * comma * args(arg_var_ex, arg_normal, arg_normal)) +
   (token(l.KEYWORD, keyword'Reg' + keyword'Files' + keyword'Read')
-    * ws * comma * args(arg_normal, arg_normal))
-
-if is_v2 then
-  Loop_args = Loop_args +
-    (arg_expression^-1)
-else
-  Loop_args = Loop_args +
-    (arg_normal * comma * args(arg_normal, arg_normal, arg_normal)) +
-    ((number * ws)^-1 * otb_at_eol) +
-    (arg_normal^-1) -- Technically this one supports OTB too, but seems not worth the trouble.
-end
+    * ws * comma * args(arg_normal, arg_normal)) +
+  (arg_normal * comma * args(arg_normal, arg_normal, arg_normal)) +
+  ((number * ws)^-1 * otb_at_eol) +
+  (arg_normal^-1) -- Technically this one supports OTB too, but seems not worth the trouble.
 
 local in_keyword = token(l.KEYWORD, keyword'in')
 
@@ -1058,6 +685,13 @@ local For_args = arg_var * (comma * ws * (#in_keyword + arg_var))^-1
 
 local args_n = args(arg_normal)
 local args_e = args(arg_expression_last)
+local arg_nc = (arg_normal * comma * ws * (command + token(l.OPERATOR, S'{}')))
+local arg_nc_l = arg_nc + arg_last
+local arg_nc_nnnc_nnl = arg_nc + args(arg_normal, arg_normal, arg_nc_l)
+
+local IfN_args = args(arg_nc_l)
+local IfVN_args = args(arg_var, arg_nc_l)
+local IfNNNN_args = args(arg_normal, arg_nc_nnnc_nnl)
 
 def_flow_cmd {
   Break = args_n,
@@ -1070,47 +704,26 @@ def_flow_cmd {
   Return = args_e,
   Throw = args_e,
   Until = args_e,
+  If = GR(If_args),
+  IfEqual = IfVN_args,
+  IfExist = IfN_args,
+  IfGreater = IfVN_args,
+  IfGreaterOrEqual = IfVN_args,
+  IfInString = IfVN_args,
+  IfLess = IfVN_args,
+  IfLessOrEqual = IfVN_args,
+  IfMsgBox = IfN_args,
+  IfNotEqual = IfVN_args,
+  IfNotExist = IfN_args,
+  IfNotInString = IfVN_args,
+  IfWinActive = IfNNNN_args,
+  IfWinExist = IfNNNN_args,
+  IfWinNotActive = IfNNNN_args,
+  IfWinNotExist = IfNNNN_args,
 }
 
-if is_v2 then
-  local args_nn = map_args'SS'
-  def_flow_cmd {
-    LoopFiles = args_nn,
-    LoopReg = args_nn,
-    LoopRead = args_nn,
-    LoopParse = map_args'SSS',
-  }
-else
-  local arg_nc = (arg_normal * comma * ws * (command + token(l.OPERATOR, S'{}')))
-  local arg_nc_l = arg_nc + arg_last
-  local arg_nc_nnnc_nnl = arg_nc + args(arg_normal, arg_normal, arg_nc_l)
-
-  local IfN_args = args(arg_nc_l)
-  local IfVN_args = args(arg_var, arg_nc_l)
-  local IfNNNN_args = args(arg_normal, arg_nc_nnnc_nnl)
-
-  def_flow_cmd {
-    If = GR(If_args),
-    IfEqual = IfVN_args,
-    IfExist = IfN_args,
-    IfGreater = IfVN_args,
-    IfGreaterOrEqual = IfVN_args,
-    IfInString = IfVN_args,
-    IfLess = IfVN_args,
-    IfLessOrEqual = IfVN_args,
-    IfMsgBox = IfN_args,
-    IfNotEqual = IfVN_args,
-    IfNotExist = IfN_args,
-    IfNotInString = IfVN_args,
-    IfWinActive = IfNNNN_args,
-    IfWinExist = IfNNNN_args,
-    IfWinNotActive = IfNNNN_args,
-    IfWinNotExist = IfNNNN_args,
-  }
-end
-
 def_flow_par {
-  If = is_v2 and GR(If_args) or args_e,
+  If = args_e,
   While = args_e,
 }
 
@@ -1153,22 +766,18 @@ def_directives {
   UseHook = no_args,
   Warn = directive_args,
   WinActivateForce = no_args,
-}
-if not is_v2 then
   -- Directives for v1 only.
-  def_directives {
-    CommentFlag = directive_args,
-    Delimiter = directive_args,
-    DerefChar = directive_args,
-    EscapeChar = directive_args,
-    LTrim = directive_args,
-    MaxMem = directive_args,
-    NoEnv = no_args,
-  }
-end
+  CommentFlag = directive_args,
+  Delimiter = directive_args,
+  DerefChar = directive_args,
+  EscapeChar = directive_args,
+  LTrim = directive_args,
+  MaxMem = directive_args,
+  NoEnv = no_args,
+}
 
--- Variables common to v1 and v2.
 def_keywords(variable_words, l.VARIABLE, {
+  -- Variables common to v1 and v2.
   'a_ahkpath', 'a_ahkversion', 'a_appdata', 'a_appdatacommon',
   'a_caretx', 'a_carety', 'a_computername', 'a_controldelay', 'a_coordmodecaret', 'a_coordmodemenu', 'a_coordmodemouse', 'a_coordmodepixel', 'a_coordmodetooltip', 'a_cursor',
   'a_dd', 'a_ddd', 'a_dddd', 'a_defaultgui', 'a_defaultlistview', 'a_defaultmousespeed', 'a_defaulttreeview', 'a_desktop', 'a_desktopcommon', 'a_detecthiddentext', 'a_detecthiddenwindows',
@@ -1190,55 +799,39 @@ def_keywords(variable_words, l.VARIABLE, {
   'a_wday', 'a_windelay', 'a_windir', 'a_workingdir',
   'a_yday', 'a_year', 'a_yweek', 'a_yyyy',
   'clipboard', 'clipboardall', 'false', 'programfiles', 'true',
+  -- Variables for v1 only.
+  'a_autotrim',
+  'a_batchlines',
+  'a_exitreason',
+  'a_formatfloat', 'a_formatinteger',
+  'a_loopfilelongpath',
+  'a_numbatchlines',
+  'a_ostype',
+  'comspec',
 })
 def_keywords(variable_words, l.KEYWORD, {
   'this' -- It's a variable, but feels like a keyword. This is for contexts which only accept variables, not real keywords.
 })
-if is_v2 then
-  -- Variables for v2 only.
-  def_keywords(variable_words, l.VARIABLE, {
-    'a_comspec',
-    'a_initialworkingdir',
-    'a_loopfilepath',
-    'a_msgboxresult',
-  })
-  -- Functions for v2 are the same as commands (already set up).
-  -- Only these few are handled this way because () forces expression mode.
-  def_keywords(function_words, l.KEYWORD, {
-    'loop', 'loopfiles', 'loopparse', 'loopread', 'loopreg',
-  })
-else
-  -- Variables for v1 only.
-  def_keywords(variable_words, l.VARIABLE, {
-    'a_autotrim',
-    'a_batchlines',
-    'a_exitreason',
-    'a_formatfloat', 'a_formatinteger',
-    'a_loopfilelongpath',
-    'a_numbatchlines',
-    'a_ostype',
-    'comspec',
-  })
-  -- Functions for v1 (does not include commands).
-  def_keywords(function_words, l.FUNCTION, {
-    'abs', 'acos', 'array', 'asc', 'asin', 'atan',
-    'ceil', 'chr', 'comobjactive', 'comobjarray', 'comobjconnect', 'comobjcreate', 'comobject', 'comobjerror', 'comobjflags', 'comobjget', 'comobjquery', 'comobjtype', 'comobjvalue', 'cos',
-    'dllcall',
-    'exception', 'exp',
-    'fileexist', 'fileopen', 'floor', 'format', 'func',
-    'getkeyname', 'getkeysc', 'getkeystate', 'getkeyvk',
-    'il_add', 'il_create', 'il_destroy', 'instr', 'isbyref', 'isfunc', 'islabel', 'isobject',
-    'ln', 'loadpicture', 'log', 'ltrim', 'lv_add', 'lv_delete', 'lv_deletecol', 'lv_getcount', 'lv_getnext', 'lv_gettext', 'lv_insert', 'lv_insertcol', 'lv_modify', 'lv_modifycol', 'lv_setimagelist',
-    'menugethandle', 'menugetname', 'mod',
-    'numget', 'numput',
-    'objaddref', 'objbindmethod', 'objclone', 'objdelete', 'object', 'objgetaddress', 'objgetcapacity', 'objhaskey', 'objinsert', 'objinsertat', 'objlength', 'objmaxindex', 'objminindex', 'objnewenum', 'objpop', 'objpush', 'objrawset', 'objrelease', 'objremove', 'objremoveat', 'objsetcapacity', 'onclipboardchange', 'onexit', 'onmessage', 'ord',
-    'regexmatch', 'regexreplace', 'registercallback', 'round', 'rtrim',
-    'sb_seticon', 'sb_setparts', 'sb_settext', 'sin', 'sqrt', 'strget', 'strlen', 'strput', 'strreplace', 'strsplit', 'substr',
-    'tan', 'trim', 'tv_add', 'tv_delete', 'tv_get', 'tv_getchild', 'tv_getcount', 'tv_getnext', 'tv_getparent', 'tv_getprev', 'tv_getselection', 'tv_gettext', 'tv_modify', 'tv_setimagelist',
-    'varsetcapacity',
-    'winactive', 'winexist'
-  })
-end
+
+-- Functions for v1 (does not include commands).
+def_keywords(function_words, l.FUNCTION, {
+  'abs', 'acos', 'array', 'asc', 'asin', 'atan',
+  'ceil', 'chr', 'comobjactive', 'comobjarray', 'comobjconnect', 'comobjcreate', 'comobject', 'comobjerror', 'comobjflags', 'comobjget', 'comobjquery', 'comobjtype', 'comobjvalue', 'cos',
+  'dllcall',
+  'exception', 'exp',
+  'fileexist', 'fileopen', 'floor', 'format', 'func',
+  'getkeyname', 'getkeysc', 'getkeystate', 'getkeyvk',
+  'il_add', 'il_create', 'il_destroy', 'instr', 'isbyref', 'isfunc', 'islabel', 'isobject',
+  'ln', 'loadpicture', 'log', 'ltrim', 'lv_add', 'lv_delete', 'lv_deletecol', 'lv_getcount', 'lv_getnext', 'lv_gettext', 'lv_insert', 'lv_insertcol', 'lv_modify', 'lv_modifycol', 'lv_setimagelist',
+  'menugethandle', 'menugetname', 'mod',
+  'numget', 'numput',
+  'objaddref', 'objbindmethod', 'objclone', 'objdelete', 'object', 'objgetaddress', 'objgetcapacity', 'objhaskey', 'objinsert', 'objinsertat', 'objlength', 'objmaxindex', 'objminindex', 'objnewenum', 'objpop', 'objpush', 'objrawset', 'objrelease', 'objremove', 'objremoveat', 'objsetcapacity', 'onclipboardchange', 'onexit', 'onmessage', 'ord',
+  'regexmatch', 'regexreplace', 'registercallback', 'round', 'rtrim',
+  'sb_seticon', 'sb_setparts', 'sb_settext', 'sin', 'sqrt', 'strget', 'strlen', 'strput', 'strreplace', 'strsplit', 'substr',
+  'tan', 'trim', 'tv_add', 'tv_delete', 'tv_get', 'tv_getchild', 'tv_getcount', 'tv_getnext', 'tv_getparent', 'tv_getprev', 'tv_getselection', 'tv_gettext', 'tv_modify', 'tv_setimagelist',
+  'varsetcapacity',
+  'winactive', 'winexist'
+})
 
 M._foldsymbols = {
   [l.OPERATOR] = {['{'] = 1, ['}'] = -1},
