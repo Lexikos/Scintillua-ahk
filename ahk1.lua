@@ -799,6 +799,7 @@ def_keywords(variable_words, l.VARIABLE, {
   'a_wday', 'a_windelay', 'a_windir', 'a_workingdir',
   'a_yday', 'a_year', 'a_yweek', 'a_yyyy',
   'clipboard', 'clipboardall', 'false', 'programfiles', 'true',
+  'a_args',
   -- Variables for v1 only.
   'a_autotrim',
   'a_batchlines',
@@ -830,7 +831,8 @@ def_keywords(function_words, l.FUNCTION, {
   'sb_seticon', 'sb_setparts', 'sb_settext', 'sin', 'sqrt', 'strget', 'strlen', 'strput', 'strreplace', 'strsplit', 'substr',
   'tan', 'trim', 'tv_add', 'tv_delete', 'tv_get', 'tv_getchild', 'tv_getcount', 'tv_getnext', 'tv_getparent', 'tv_getprev', 'tv_getselection', 'tv_gettext', 'tv_modify', 'tv_setimagelist',
   'varsetcapacity',
-  'winactive', 'winexist'
+  'winactive', 'winexist',
+  'min', 'max',
 })
 
 M._foldsymbols = {
