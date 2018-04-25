@@ -234,7 +234,7 @@ local function args(...)
   return GR(a)
 end
 
-local arg_litlabel = ws * token(l.LABEL, (l.any - S' \t,`\r\n')^1)
+local arg_litlabel = ws * (token(l.LABEL, (l.any - S' \t,`\r\n')^1) - ';')
 
 local arg_expression = ws * (r.expression_until_comma + #P',')
 
