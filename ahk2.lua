@@ -294,11 +294,10 @@ local start_invoke = (
   variable * P'['
 )
 local start_ternary = (1 - S'?\r\n')^0 * P'?' * (1 - S':\r\n')^0 * ':'
-local start_parenex = P'('
 -- These are combined for efficiency.  Invoke is detected with lookahead to ensure
 -- it is styled correctly as an expression.  (By contrast, the left hand of assignment
 -- should be styled as a variable even if it matches a keyword.)
-local stm_exp_misc = #(start_invoke + start_ternary + start_parenex) * r.expression
+local stm_exp_misc = #(S'(%' + start_invoke + start_ternary) * r.expression
 
 local stm_vardecl = token(l.KEYWORD, keyword'local' + keyword'global' + keyword'static')
   * ((ws1 * #wordchar * r.expression^-1) + ws * (comment + at_eol))
