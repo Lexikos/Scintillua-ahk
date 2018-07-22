@@ -297,6 +297,7 @@ local flow3, def_flow_otb = word_switch(
 
 -- Pattern matching any command.
 command = command + flow1 + flow2 + flow3
+  + (token(l.KEYWORD, keyword'default') * ws * token_op':' * ws * V'statement'^-1)
 
 local stm_propdecl = (token(l.KEYWORD, keyword'get' + keyword'set') + identifier)
     * ws * (otb_at_eol + ws * token(l.WHITESPACE, l.newline) * #(ws * '{'))
@@ -720,6 +721,8 @@ def_flow_cmd {
   IfWinExist = IfNNNN_args,
   IfWinNotActive = IfNNNN_args,
   IfWinNotExist = IfNNNN_args,
+  Switch = args_e,
+  Case = args_e,
 }
 
 def_flow_par {
