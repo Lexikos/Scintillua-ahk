@@ -200,9 +200,9 @@ local exp_common = ws1 + q_str + parenex + number + exp_word
 -- x := %expression% : expression excludes percent signs; ends at %
 -- fn(expression) : expression includes commas and percent signs; ends at )
 local function expr_patt(ender)
-  local operators = '+-/*<>~!=^&|?~:,.'
+  local operators = '+-/*<>~!=^&|?~:,.()[]{}'
   if ender then operators = operators:gsub('%'..ender, '') end
-  local patt = token(l.OPERATOR, S(operators)) + exp_common
+  local patt = exp_common + token(l.OPERATOR, S(operators))
   if ender ~= '%' then patt = patt + deref end
   return patt^1
 end
@@ -297,7 +297,8 @@ local start_ternary = (1 - S'?\r\n')^0 * P'?' * (1 - S':\r\n')^0 * ':'
 -- These are combined for efficiency.  Invoke is detected with lookahead to ensure
 -- it is styled correctly as an expression.  (By contrast, the left hand of assignment
 -- should be styled as a variable even if it matches a keyword.)
-local stm_exp_misc = #(S'(%' + start_invoke + start_ternary) * r.expression
+-- local stm_exp_misc = #(S'(%' + start_invoke + start_ternary) * r.expression
+local stm_exp_misc = r.expression
 
 local stm_vardecl = token(l.KEYWORD, keyword'local' + keyword'global' + keyword'static')
   * ((ws1 * #wordchar * r.expression^-1) + ws * (comment + at_eol))
@@ -314,8 +315,8 @@ r.statement
   -- command takes precedence over stm_fncall for if() and while()
   -- command takes precedence over stm_inc_dec for MsgBox ++ (with space).
   + command
-  + stm_fncall + stm_inc_dec + stm_exp_misc
   + token(l.OPERATOR, S'{}') * ws * V'statement'^-1
+  + stm_fncall + stm_inc_dec + stm_exp_misc
 
 local label = token(l.LABEL, (1 - S'\t ,:\r\n')^1 * ':')
   -- Labels can't coexist with other code (except comments) on the same line.
