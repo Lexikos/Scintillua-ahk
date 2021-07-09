@@ -98,7 +98,7 @@ local line_comment = (';' - B(R('\033\255'))) * l.nonnewline^0
 local block_comment
   = starts_line('/*')
   * (l.any - (starts_line('*/') + P'*/' * ws0 * -l.nonnewline))^0
-  * P('*/')^-1
+  * P(ws0 * '*/')^-1
 local comment = token(l.COMMENT, line_comment + block_comment)
 
 local ws_multiline = (comment^-1 * token(l.WHITESPACE, S' \t\r\n'^1))^0
@@ -139,6 +139,7 @@ exp_keywords['contains'] = l.ERROR
 exp_keywords['is'] = l.KEYWORD
 exp_keywords['byref'] = l.KEYWORD -- It's only a keyword in function definitions, but since they can't be detected reliably...
 exp_keywords['this'] = l.KEYWORD -- Not really a keyword, but feels like one.
+exp_keywords['as'] = l.KEYWORD
 
 local function exp_word_highlighter(word_patt, words)
   local def_token = l.IDENTIFIER
@@ -152,35 +153,25 @@ local function def_keywords(word_set, token_name, array)
     word_set[word:lower()] = token_name
   end
 end
-local function_words, nonfunction_words, variable_words = {}, {}, {}
+local id_words = {}
 for word, token_name in pairs(exp_keywords) do
-  function_words[word] = token_name
-  nonfunction_words[word] = token_name
+  id_words[word] = token_name
 end
-setmetatable(nonfunction_words, {__index = variable_words})
 
-local plain_variable = exp_word_highlighter(identifier_patt, variable_words)
-local plain_function = exp_word_highlighter(identifier_patt * #P'(', function_words)
-
-local exp_word = B'.' * (token(l.KEYWORD, keyword'base') + identifier)
-  + plain_function
-  + token(l.KEYWORD, keyword'base') * #S'.['
-  + exp_word_highlighter(identifier_patt, nonfunction_words) -- var or keyword
+local special_property = token(l.KEYWORD, keyword'base' + keyword'prototype')
+local property_id = special_property + token(l.NUMBER, l.integer) + identifier
+local exp_word = B'.' * property_id
+  + exp_word_highlighter(identifier_patt, id_words) -- var or keyword
 
 local deref = pct * V'expression_until_pct' * pct
 
-local dot_prop = ws * token_op'.' * (token(l.NUMBER, l.integer) + identifier)
+local dot_prop = ws * token_op'.' * property_id
 local double_deref = identifier^-1 * (deref * identifier^-1)^1
-local variable = double_deref + plain_variable
+local variable = double_deref + exp_word_highlighter(identifier_patt, id_words)
 -- local variable_or_property = variable * dot_prop^0
 -- local property = variable * dot_prop^1
 local property = exp_word * dot_prop^1
 local variable_or_property = property + variable
-
--- New is unconditionally a keyword in v2, but still affects the interpretation
--- of the following word; i.e. xxx in 'new xxx()' is a variable, not a function.
-exp_word = (token(l.KEYWORD, keyword'new') * (ws1 * variable)^-1) + exp_word
--- exp_word = (token(l.KEYWORD, keyword'new') * ws1 * variable) + exp_word
 
 -- Make the end-quote optional so highlighting kicks in sooner.
 local sq = token_op"'"
@@ -220,6 +211,7 @@ end
 
 r.expression_until_comma = expr_patt(',')
 r.expression_until_pct = expr_patt('%')
+r.expression_until_colon = expr_patt(':')
 r.expression = expr_patt()
 
 -- Patterns used as command args.
@@ -240,7 +232,7 @@ local arg_expression = ws * (r.expression_until_comma + #P',')
 
 local arg_var = ws * (variable * ws + #P',')
 
-local cmd_delim = (ws * comma * ws) + ws1 + at_eol
+local cmd_delim = ws1 + at_eol
 
 -- Control flow (with command-like rules).
 local flow1, def_flow_cmd = word_switch(
@@ -256,7 +248,8 @@ local flow3, def_flow_otb = word_switch(
 )
 
 -- Commands.
-local command = (property + exp_word_highlighter(identifier_patt, function_words))
+-- FIXME
+local command = (property + exp_word_highlighter(identifier_patt, id_words))
   * cmd_delim * r.expression^0
 
 -- Pattern matching any command.
@@ -288,7 +281,7 @@ local stm_inc_dec = (
   + (variable_or_property * ws * inc_dec)
   ) * r.expression^-1
 
-local stm_fncall = (double_deref * #P'(' + plain_function) * r.expression
+local stm_fncall = ((double_deref + exp_word) * #P'(') * r.expression
 local start_invoke = (
   property * ((ws * (comment + at_eol)) + #S'([') +
   variable * P'['
@@ -305,6 +298,8 @@ local stm_vardecl = token(l.KEYWORD, keyword'local' + keyword'global' + keyword'
 local stm_class = token(l.KEYWORD, keyword'class') * ws * identifier * ws
   * (token(l.KEYWORD, keyword'extends') * ws * (variable_or_property * ws)^-1)^-1
   * token_op'{'^-1
+local case_default = token(l.LABEL, keyword'default' * ws0 * ':')
+  * ws * V'statement'^-1
 
 r.statement
   = stm_vardecl + stm_class
@@ -312,6 +307,7 @@ r.statement
   + stm_assign
   -- new takes precedence over user-defined commands (v2).
   + #(insensitive'new' * S' \t') * r.expression
+  + case_default
   -- command takes precedence over stm_fncall for if() and while()
   -- command takes precedence over stm_inc_dec for MsgBox ++ (with space).
   + command
@@ -397,65 +393,58 @@ local function args2(...)
   return GR(a)
 end
 
-def_keywords(function_words, l.FUNCTION, {
+def_keywords(id_words, l.FUNCTION, {
+
   'Abs',
   'ACos',
-  'Array',
   'ASin',
   'ATan',
   'BlockInput',
+  'CallbackCreate',
+  'CallbackFree',
   'CaretGetPos',
   'Ceil',
   'Chr',
   'Click',
-  'ClipboardAll',
   'ClipWait',
+  'ComCall',
   'ComObjActive',
-  'ComObjArray',
   'ComObjConnect',
-  'ComObjCreate',
-  'ComObject',
-  'ComObjError',
   'ComObjFlags',
+  'ComObjFromPtr',
   'ComObjGet',
   'ComObjQuery',
   'ComObjType',
   'ComObjValue',
   'ControlAddItem',
-  'ControlChoose',
+  'ControlChooseIndex',
   'ControlChooseString',
   'ControlClick',
   'ControlDeleteItem',
-  'ControlEditPaste',
   'ControlFindItem',
   'ControlFocus',
   'ControlGetChecked',
   'ControlGetChoice',
-  'ControlGetCurrentCol',
-  'ControlGetCurrentLine',
+  'ControlGetClassNN',
   'ControlGetEnabled',
   'ControlGetExStyle',
   'ControlGetFocus',
   'ControlGetHwnd',
-  'ControlGetLine',
-  'ControlGetLineCount',
-  'ControlGetList',
+  'ControlGetIndex',
+  'ControlGetItems',
   'ControlGetPos',
-  'ControlGetSelected',
   'ControlGetStyle',
-  'ControlGetTab',
   'ControlGetText',
   'ControlGetVisible',
   'ControlHide',
   'ControlHideDropDown',
   'ControlMove',
   'ControlSend',
-  'ControlSendRaw',
+  'ControlSendText',
   'ControlSetChecked',
   'ControlSetEnabled',
   'ControlSetExStyle',
   'ControlSetStyle',
-  'ControlSetTab',
   'ControlSetText',
   'ControlShow',
   'ControlShowDropDown',
@@ -488,6 +477,12 @@ def_keywords(function_words, l.FUNCTION, {
   'DriveSetLabel',
   'DriveUnlock',
   'Edit',
+  'EditGetCurrentCol',
+  'EditGetCurrentLine',
+  'EditGetLine',
+  'EditGetLineCount',
+  'EditGetSelectedText',
+  'EditPaste',
   'EnvGet',
   'EnvSet',
   'Exception',
@@ -517,18 +512,25 @@ def_keywords(function_words, l.FUNCTION, {
   'Floor',
   'Format',
   'FormatTime',
-  'Func',
   'GetKeyName',
   'GetKeySC',
   'GetKeyState',
   'GetKeyVK',
+  'GetMethod',
   'GroupActivate',
   'GroupAdd',
   'GroupClose',
   'GroupDeactivate',
-  'GuiCreate',
   'GuiCtrlFromHwnd',
   'GuiFromHwnd',
+  'HasBase',
+  'HasMethod',
+  'HasProp',
+  'HotIf',
+  'HotIfWinActive',
+  'HotIfWinExist',
+  'HotIfWinNotActive',
+  'HotIfWinNotExist',
   'Hotkey',
   'Hotstring',
   'IL_Add',
@@ -538,25 +540,35 @@ def_keywords(function_words, l.FUNCTION, {
   'IniDelete',
   'IniRead',
   'IniWrite',
-  'Input',
   'InputBox',
-  'InputEnd',
+  'InstallKeybdHook',
+  'InstallMouseHook',
   'InStr',
-  'IsByRef',
-  'IsFunc',
+  'IsAlnum',
+  'IsAlpha',
+  'IsDigit',
+  'IsFloat',
+  'IsInteger',
   'IsLabel',
+  'IsLower',
+  'IsNumber',
   'IsObject',
+  'IsSet',
+  'IsSpace',
+  'IsTime',
+  'IsUpper',
+  'IsXDigit',
   'KeyHistory',
   'KeyWait',
   'ListHotkeys',
   'ListLines',
   'ListVars',
+  'ListViewGetContent',
   'Ln',
   'LoadPicture',
   'Log',
   'LTrim',
   'Max',
-  'MenuCreate',
   'MenuFromHandle',
   'MenuSelect',
   'Min',
@@ -575,24 +587,16 @@ def_keywords(function_words, l.FUNCTION, {
   'NumPut',
   'ObjAddRef',
   'ObjBindMethod',
-  'ObjClone',
-  'ObjDelete',
-  'Object',
-  'ObjGetAddress',
+  'ObjFromPtr',
+  'ObjFromPtrAddRef',
   'ObjGetBase',
   'ObjGetCapacity',
-  'ObjHasKey',
-  'ObjInsertAt',
-  'ObjLength',
-  'ObjMaxIndex',
-  'ObjMinIndex',
-  'ObjNewEnum',
-  'ObjPop',
-  'ObjPush',
-  'ObjRawGet',
-  'ObjRawSet',
+  'ObjHasOwnProp',
+  'ObjOwnPropCount',
+  'ObjOwnProps',
+  'ObjPtr',
+  'ObjPtrAddRef',
   'ObjRelease',
-  'ObjRemoveAt',
   'ObjSetBase',
   'ObjSetCapacity',
   'OnClipboardChange',
@@ -602,6 +606,7 @@ def_keywords(function_words, l.FUNCTION, {
   'Ord',
   'OutputDebug',
   'Pause',
+  'Persistent',
   'PixelGetColor',
   'PixelSearch',
   'PostMessage',
@@ -611,11 +616,11 @@ def_keywords(function_words, l.FUNCTION, {
   'ProcessWait',
   'ProcessWaitClose',
   'Random',
+  'RandomSeed',
   'RegDelete',
   'RegDeleteKey',
   'RegExMatch',
   'RegExReplace',
-  'RegisterCallback',
   'RegRead',
   'RegWrite',
   'Reload',
@@ -631,7 +636,7 @@ def_keywords(function_words, l.FUNCTION, {
   'SendMessage',
   'SendMode',
   'SendPlay',
-  'SendRaw',
+  'SendText',
   'SetCapslockState',
   'SetControlDelay',
   'SetDefaultMouseSpeed',
@@ -640,7 +645,7 @@ def_keywords(function_words, l.FUNCTION, {
   'SetNumlockState',
   'SetRegView',
   'SetScrollLockState',
-  'SetStoreCapslockMode',
+  'SetStoreCapsLockMode',
   'SetTimer',
   'SetTitleMatchMode',
   'SetWinDelay',
@@ -650,17 +655,22 @@ def_keywords(function_words, l.FUNCTION, {
   'Sleep',
   'Sort',
   'SoundBeep',
-  'SoundGet',
+  'SoundGetInterface',
+  'SoundGetMute',
+  'SoundGetName',
+  'SoundGetVolume',
   'SoundPlay',
-  'SoundSet',
+  'SoundSetMute',
+  'SoundSetVolume',
   'SplitPath',
   'Sqrt',
   'StatusBarGetText',
   'StatusBarWait',
+  'StrCompare',
   'StrGet',
-  'StringCaseSense',
   'StrLen',
   'StrLower',
+  'StrPtr',
   'StrPut',
   'StrReplace',
   'StrSplit',
@@ -668,6 +678,7 @@ def_keywords(function_words, l.FUNCTION, {
   'SubStr',
   'Suspend',
   'SysGet',
+  'SysGetIPAddresses',
   'Tan',
   'Thread',
   'ToolTip',
@@ -675,13 +686,14 @@ def_keywords(function_words, l.FUNCTION, {
   'TrayTip',
   'Trim',
   'Type',
-  'VarSetCapacity',
+  'VarSetStrCapacity',
   'WinActivate',
   'WinActivateBottom',
   'WinActive',
   'WinClose',
   'WinExist',
   'WinGetClass',
+  'WinGetClientPos',
   'WinGetControls',
   'WinGetControlsHwnd',
   'WinGetCount',
@@ -747,7 +759,8 @@ local For_args = arg_var * (comma * ws * (#in_keyword + arg_var))^-1
 
 def_flow_cmd {
   Break = args_litlabel,
-  Catch = args(arg_var) * ws * token_op'{'^-1,
+  Case = GR(r.expression_until_colon * token_op':' * ws * r.statement^-1),
+  Catch = GR(r.expression),
   Continue = args_litlabel,
   For = GR(For_args),
   Gosub = args_litlabel,
@@ -763,6 +776,7 @@ def_flow_par {
   While = args_e,
   Goto = args_e,
   Gosub = args_e,
+  Switch = args_ee,
 }
 
 def_flow_otb {
@@ -777,21 +791,16 @@ def_flow_otb {
 -- Directives
 def_directives {
   ClipboardTimeout = directive_args,
+  DllLoad = directive_args,
   ErrorStdOut = no_args,
   HotkeyInterval = directive_args,
   HotkeyModifierTimeout = directive_args,
   Hotstring = directive_args,
-  If = args(arg_expression),
-  IfTimeout = directive_args,
-  IfWinActive = directive_args,
-  IfWinExist = directive_args,
-  IfWinNotActive = directive_args,
-  IfWinNotExist = directive_args,
+  HotIf = args(arg_expression),
+  HotIfTimeout = directive_args,
   Include = directive_args,
   IncludeAgain = directive_args,
   InputLevel = directive_args,
-  InstallKeybdHook = no_args,
-  InstallMouseHook = no_args,
   KeyHistory = directive_args,
   MaxHotkeysPerInterval = directive_args,
   MaxThreads = directive_args,
@@ -799,15 +808,15 @@ def_directives {
   MaxThreadsPerHotkey = directive_args,
   MenuMaskKey = directive_args,
   NoTrayIcon = no_args,
-  Persistent = no_args,
+  Requires = directive_args,
   SingleInstance = directive_args,
+  SuspendExempt = no_args,
   UseHook = no_args,
   Warn = directive_args,
   WinActivateForce = no_args,
 }
 
-def_keywords(variable_words, l.VARIABLE, {
-  -- v1 & v2 variables
+def_keywords(id_words, l.VARIABLE, {
   'a_ahkpath', 'a_ahkversion', 'a_appdata', 'a_appdatacommon', 'a_args',
   'a_computername', 'a_comspec', 'a_controldelay', 'a_coordmodecaret', 'a_coordmodemenu', 'a_coordmodemouse', 'a_coordmodepixel', 'a_coordmodetooltip', 'a_cursor',
   'a_dd', 'a_ddd', 'a_dddd', 'a_defaultmousespeed', 'a_desktop', 'a_desktopcommon', 'a_detecthiddentext', 'a_detecthiddenwindows',
@@ -822,24 +831,32 @@ def_keywords(variable_words, l.VARIABLE, {
   'a_osversion',
   'a_priorhotkey', 'a_priorkey', 'a_programfiles', 'a_programs', 'a_programscommon', 'a_ptrsize',
   'a_regview',
-  'a_screendpi', 'a_screenheight', 'a_screenwidth', 'a_scriptdir', 'a_scriptfullpath', 'a_scripthwnd', 'a_scriptname', 'a_sec', 'a_sendlevel', 'a_sendmode', 'a_space', 'a_startmenu', 'a_startmenucommon', 'a_startup', 'a_startupcommon', 'a_storecapslockmode', 'a_stringcasesense',
+  'a_screendpi', 'a_screenheight', 'a_screenwidth', 'a_scriptdir', 'a_scriptfullpath', 'a_scripthwnd', 'a_scriptname', 'a_sec', 'a_sendlevel', 'a_sendmode', 'a_space', 'a_startmenu', 'a_startmenucommon', 'a_startup', 'a_startupcommon', 'a_storecapslockmode',
   'a_tab', 'a_temp', 'a_thisfunc', 'a_thishotkey', 'a_thislabel', 'a_tickcount', 'a_timeidle', 'a_timeidlekeyboard', 'a_timeidlemouse', 'a_timeidlephysical', 'a_timesincepriorhotkey', 'a_timesincethishotkey', 'a_titlematchmode', 'a_titlematchmodespeed',
   'a_username',
   'a_wday', 'a_windelay', 'a_windir', 'a_workingdir',
   'a_yday', 'a_year', 'a_yweek', 'a_yyyy',
-  'clipboard', 'false', 'programfiles', 'true',
-  --[[ v1 variables
-  'a_thismenu', 'a_thismenuitem', 'a_thismenuitempos', 'a_caretx', 'a_carety', 'clipboardall',
-  ]]-- v2 variables
+  'a_clipboard',
   'a_initialworkingdir',
   'a_traymenu', 'a_allowmainwindow',
+  'object', 'array', 'map', 'class',
+  'any', 'primitive', 'string', 'number', 'integer', 'float',
+  'buffer', 'clipboardall', 'file', 'varref',
+  'error', 'indexerror', 'keyerror', 'membererror', 'propertyerror', 'methoderror', 'memoryerror', 'oserror', 'targeterror', 'timeouterror', 'typeerror', 'valueerror', 'zerodivisionerror',
+  'func', 'boundfunc', 'closure', 'enumerator', 'gui', 'inputhook', 'menu', 'menubar', 'regexmatchinfo',
+  'ComObject',
+  'ComValue',
+  'ComValueRef',
+  'ComObjArray',
 })
-def_keywords(variable_words, l.KEYWORD, {
-  'this' -- It's a variable, but feels like a keyword. This is for contexts which only accept variables, not real keywords.
+def_keywords(id_words, l.KEYWORD, {
+  'true', 'false',
+  'this', 'thisHotkey', -- Variables, but they feel like keywords. This is for contexts which only accept variables, not real keywords.
+  'super'
 })
 -- Functions for v2 are the same as commands (already set up).
 -- Only these few are handled this way because () forces expression mode.
-def_keywords(function_words, l.KEYWORD, {
+def_keywords(id_words, l.KEYWORD, {
   'loop', --'loopfiles', 'loopparse', 'loopread', 'loopreg',
 })
 

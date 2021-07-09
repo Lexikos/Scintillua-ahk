@@ -765,6 +765,7 @@ def_directives {
   MenuMaskKey = directive_args,
   NoTrayIcon = no_args,
   Persistent = no_args,
+  Requires = directive_args,
   SingleInstance = directive_args,
   UseHook = no_args,
   Warn = directive_args,
