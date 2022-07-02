@@ -1,10 +1,6 @@
 
 -- AutoHotkey v2 LPeg lexer.
 
--- Debug
-io.stdout:setvbuf("no")
-io.stderr:setvbuf("no")
-
 local lpeg = require('lpeg')
 local l = require('lexer')
 local word_match = l.word_match
