@@ -10,10 +10,14 @@ About Scintillua:
 
 > Scintillua adds dynamic Lua LPeg lexers to Scintilla. It is the quickest way to add new or customized syntax highlighting and code folding for programming languages to any Scintilla-based text editor or IDE. Scintillua was designed to be dropped into or compiled with any Scintilla environment.
 
+Tested with:
+  - Scintillua 5.3
+  - SciTE4AutoHotkey 3.1 (SciTE 5.2.2)
+
 
 ## Installation
 
-Download [Scintillua](https://foicica.com/scintillua/) and install as below.
+Download [Scintillua](https://orbitalquark.github.io/scintillua/) and install as below.
 
   - Locate your SciTE home directory; the directory which contains SciTEUser.properties.
   - Unpack Scintillua and move the `lexers` directory into your home directory.
@@ -26,7 +30,7 @@ Add either the contents of `lexers/lpeg_s4a.properties` or the following line to
 
     import lexers/lpeg_s4a
 
-Add either the contents of `lexers/lpeg_s4a.lua` or the following line to your `UserLuaScript.lua` file.
+To fix highlighting of open documents not updating when the platform is switched, add either the contents of `lexers/lpeg_s4a.lua` or the following line to your `UserLuaScript.lua` file.
 
     dofile(props['SciteUserHome']..'/lexers/lpeg_s4a.lua')
 
