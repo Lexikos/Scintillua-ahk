@@ -470,6 +470,7 @@ def_keywords(id_words, l.FUNCTION, {
   'DriveGetStatusCD',
   'DriveGetType',
   'DriveLock',
+  'DriveRetract',
   'DriveSetLabel',
   'DriveUnlock',
   'Edit',
@@ -549,7 +550,7 @@ def_keywords(id_words, l.FUNCTION, {
   'IsLower',
   'IsNumber',
   'IsObject',
-  'IsSet',
+  'IsSetRef',
   'IsSpace',
   'IsTime',
   'IsUpper',
@@ -608,11 +609,14 @@ def_keywords(id_words, l.FUNCTION, {
   'PostMessage',
   'ProcessClose',
   'ProcessExist',
+  'ProcessGetName',
+  'ProcessGetPath',
   'ProcessSetPriority',
   'ProcessWait',
   'ProcessWaitClose',
   'Random',
   'RandomSeed',
+  'RegCreateKey',
   'RegDelete',
   'RegDeleteKey',
   'RegExMatch',
@@ -670,6 +674,7 @@ def_keywords(id_words, l.FUNCTION, {
   'StrPut',
   'StrReplace',
   'StrSplit',
+  'StrTitle',
   'StrUpper',
   'SubStr',
   'Suspend',
@@ -683,6 +688,7 @@ def_keywords(id_words, l.FUNCTION, {
   'Trim',
   'Type',
   'VarSetStrCapacity',
+  'VerCompare',
   'WinActivate',
   'WinActivateBottom',
   'WinActive',
@@ -848,7 +854,8 @@ def_keywords(id_words, l.VARIABLE, {
 def_keywords(id_words, l.KEYWORD, {
   'true', 'false',
   'this', 'thisHotkey', -- Variables, but they feel like keywords. This is for contexts which only accept variables, not real keywords.
-  'super'
+  'super',
+  'IsSet',
 })
 -- Functions for v2 are the same as commands (already set up).
 -- Only these few are handled this way because () forces expression mode.
