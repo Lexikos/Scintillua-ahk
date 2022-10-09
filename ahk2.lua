@@ -844,7 +844,7 @@ def_keywords(id_words, l.VARIABLE, {
   'object', 'array', 'map', 'class',
   'any', 'primitive', 'string', 'number', 'integer', 'float',
   'buffer', 'clipboardall', 'file', 'varref',
-  'error', 'indexerror', 'keyerror', 'membererror', 'propertyerror', 'methoderror', 'memoryerror', 'oserror', 'targeterror', 'timeouterror', 'typeerror', 'valueerror', 'zerodivisionerror',
+  'error', 'indexerror', 'membererror', 'propertyerror', 'methoderror', 'memoryerror', 'oserror', 'targeterror', 'timeouterror', 'typeerror', 'unseterror', 'unsetitemerror', 'valueerror', 'zerodivisionerror',
   'func', 'boundfunc', 'closure', 'enumerator', 'gui', 'inputhook', 'menu', 'menubar', 'regexmatchinfo',
   'ComObject',
   'ComValue',
@@ -855,6 +855,7 @@ def_keywords(id_words, l.KEYWORD, {
   'true', 'false',
   'this', 'thisHotkey', -- Variables, but they feel like keywords. This is for contexts which only accept variables, not real keywords.
   'super',
+  'unset',
   'IsSet',
 })
 -- Functions for v2 are the same as commands (already set up).
